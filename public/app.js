@@ -1,6 +1,5 @@
 /**
- * Task Dashboard Frontend
- * Handles UI logic and API calls
+ * Task Dashboard Frontend — Trello-style Board
  */
 
 let currentEditingId = null;
@@ -12,9 +11,11 @@ let selectMode = false;
 let selectedIds = new Set();
 let currentSort = 'priority';
 let currentOrder = 'desc';
-let currentView = 'list';
+let currentView = 'kanban';
 let focusedTaskIndex = -1;
 let lastRenderedTasks = [];
+let inlineAddColumn = null;
+let cardDetailTaskId = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -45,12 +46,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') { e.preventDefault(); addNote(); }
   });
 
-  // Close dropdowns on outside click
+  // Close board menu on outside click
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.dropdown')) {
-      document.querySelectorAll('.dropdown-content.show').forEach(d => d.classList.remove('show'));
+    if (!e.target.closest('.board-menu-wrapper')) {
+      closeBoardMenu();
     }
   });
+
+  setView('kanban');
 });
 
 // ==================== API CALLS ====================
@@ -72,10 +75,10 @@ async function loadStats() {
   try {
     const response = await fetch('/api/stats');
     const stats = await response.json();
-    document.getElementById('stat-total').textContent = stats.total;
-    document.getElementById('stat-backlog').textContent = stats.backlog || 0;
-    document.getElementById('stat-pending').textContent = stats.pending;
-    document.getElementById('stat-completed').textContent = stats.completed;
+    const el = document.getElementById('board-stats-inline');
+    if (el) {
+      el.textContent = `${stats.total} cards | ${stats.backlog || 0} backlog | ${stats.pending} active | ${stats.completed} done`;
+    }
   } catch (err) {
     console.error('Error loading stats:', err);
   }
@@ -287,7 +290,13 @@ async function toggleSubtask(subtaskId, completed) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ completed })
     });
-    if (currentEditingId) renderSubtaskList(await loadSubtasks(currentEditingId));
+    if (currentEditingId) {
+      renderSubtaskList(await loadSubtasks(currentEditingId));
+    }
+    if (cardDetailTaskId) {
+      const subtasks = await loadSubtasks(cardDetailTaskId);
+      renderCardDetailSubtasks(subtasks);
+    }
   } catch (err) { alert('Error updating subtask: ' + err.message); }
 }
 
@@ -295,6 +304,7 @@ async function deleteSubtask(subtaskId) {
   try {
     await fetch(`/api/subtasks/${subtaskId}`, { method: 'DELETE' });
     if (currentEditingId) renderSubtaskList(await loadSubtasks(currentEditingId));
+    if (cardDetailTaskId) renderCardDetailSubtasks(await loadSubtasks(cardDetailTaskId));
   } catch (err) { alert('Error deleting subtask: ' + err.message); }
 }
 
@@ -338,6 +348,7 @@ async function deleteNote(noteId) {
   try {
     await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
     if (currentEditingId) renderNotesList(await loadNotes(currentEditingId));
+    if (cardDetailTaskId) renderCardDetailNotes(await loadNotes(cardDetailTaskId));
   } catch (err) { alert('Error deleting note: ' + err.message); }
 }
 
@@ -425,7 +436,7 @@ function renderCategoryList() {
   const list = document.getElementById('category-list');
   list.innerHTML = categories.map(cat => `
     <li class="category-list-item">
-      <input type="color" value="${cat.color || '#64748b'}" onchange="updateCategoryColor(${cat.id}, this.value)">
+      <input type="color" value="${cat.color || '#738496'}" onchange="updateCategoryColor(${cat.id}, this.value)">
       <span class="cat-name">${escapeHtml(cat.name)}</span>
       <button class="danger" onclick="deleteCategory(${cat.id})">Delete</button>
     </li>
@@ -445,7 +456,7 @@ async function addCategory() {
     });
     if (!response.ok) { const err = await response.json(); throw new Error(err.error); }
     nameInput.value = '';
-    colorInput.value = '#64748b';
+    colorInput.value = '#738496';
     await loadCategories();
     renderCategoryList();
   } catch (err) { alert('Error adding category: ' + err.message); }
@@ -474,7 +485,7 @@ async function deleteCategory(id) {
 
 function getCategoryColor(name) {
   const cat = categories.find(c => c.name === name);
-  return cat ? cat.color : '#64748b';
+  return cat ? cat.color : '#738496';
 }
 
 // ==================== SORT CONTROLS ====================
@@ -501,30 +512,48 @@ function updateSortButtons() {
   });
 }
 
-// ==================== VIEW TOGGLE (List / Kanban) ====================
+// ==================== VIEW TOGGLE ====================
 
 function setView(view) {
   currentView = view;
-  document.getElementById('view-list-btn').classList.toggle('active', view === 'list');
-  document.getElementById('view-kanban-btn').classList.toggle('active', view === 'kanban');
-  document.getElementById('kanban-group').style.display = view === 'kanban' ? '' : 'none';
+  const boardCanvas = document.getElementById('board-canvas');
+  const listWrapper = document.getElementById('list-view-wrapper');
+  const menuBtn = document.getElementById('menu-view-btn');
 
-  if (view === 'list') {
-    document.getElementById('tasks-list').style.display = '';
-    document.getElementById('kanban-board').classList.remove('active');
-    filterAndRender();
-  } else {
-    document.getElementById('tasks-list').style.display = 'none';
+  if (view === 'kanban') {
+    boardCanvas.style.display = 'flex';
+    listWrapper.classList.remove('active');
     document.getElementById('kanban-board').classList.add('active');
+    if (menuBtn) menuBtn.textContent = 'Switch to List View';
     renderKanban();
+  } else {
+    boardCanvas.style.display = 'none';
+    listWrapper.classList.add('active');
+    document.getElementById('kanban-board').classList.remove('active');
+    if (menuBtn) menuBtn.textContent = 'Switch to Board View';
+    filterAndRender();
   }
 }
 
+function toggleListView() {
+  setView(currentView === 'kanban' ? 'list' : 'kanban');
+}
+
+// ==================== BOARD MENU ====================
+
+function toggleBoardMenu() {
+  document.getElementById('board-menu-dropdown').classList.toggle('show');
+}
+
+function closeBoardMenu() {
+  document.getElementById('board-menu-dropdown').classList.remove('show');
+}
+
+// ==================== KANBAN BOARD (Trello-style) ====================
+
 function renderKanban() {
   const board = document.getElementById('kanban-board');
-  const groupBy = document.getElementById('kanban-group').value;
 
-  // Apply current filters
   const search = document.getElementById('search').value.toLowerCase();
   const statusFilter = document.getElementById('filter-status').value;
   const categoryFilter = document.getElementById('filter-category').value;
@@ -539,88 +568,552 @@ function renderKanban() {
     return matchesSearch && matchesStatus && matchesCategory && matchesPriority;
   });
 
-  let columns;
-  if (groupBy === 'status') {
-    columns = [
-      { key: 'backlog', label: 'Backlog' },
-      { key: 'pending', label: 'Pending' },
-      { key: 'completed', label: 'Completed' },
-      { key: 'archived', label: 'Archived' }
-    ];
-  } else {
-    const catNames = [...new Set(filtered.map(t => t.category))].sort();
-    columns = catNames.map(name => ({ key: name, label: name }));
-  }
+  const columns = [
+    { key: 'backlog', label: 'Backlog' },
+    { key: 'pending', label: 'Pending' },
+    { key: 'completed', label: 'Completed' },
+    { key: 'archived', label: 'Archived' }
+  ];
 
-  // Load WIP limits
   const wipLimits = window._wipLimits || {};
 
   board.innerHTML = columns.map(col => {
-    const colTasks = filtered.filter(t => groupBy === 'status' ? t.status === col.key : t.category === col.key);
-    const catColor = groupBy === 'category' ? getCategoryColor(col.key) : null;
-    const headerStyle = catColor ? `border-bottom-color: ${catColor}` : '';
-    const colClass = groupBy === 'status' ? `col-${col.key}` : '';
+    const colTasks = filtered.filter(t => t.status === col.key);
     const wipLimit = wipLimits[col.key];
     const wipExceeded = wipLimit && colTasks.length > wipLimit;
-    const wipHtml = groupBy === 'status' ? `<span class="wip-indicator" onclick="setWipLimit('${col.key}')" title="Click to set WIP limit">${wipLimit ? `(${wipLimit})` : ''}</span>` : '';
+    const wipHtml = `<span class="wip-indicator" onclick="event.stopPropagation();setWipLimit('${col.key}')" title="Click to set WIP limit">${wipLimit ? `(${wipLimit})` : ''}</span>`;
 
     return `
-      <div class="kanban-column" data-column="${col.key}"
-        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
-        ondrop="handleDrop(event, '${col.key}', '${groupBy}')">
-        <div class="kanban-column-header ${colClass} ${wipExceeded ? 'wip-exceeded' : ''}" style="${headerStyle}">
-          <span>${escapeHtml(col.label)}${wipHtml}</span>
-          <span class="kanban-column-count">${colTasks.length}</span>
+      <div class="kanban-column" data-column="${col.key}">
+        <div class="kanban-column-header ${wipExceeded ? 'wip-exceeded' : ''}">
+          <span class="col-title">${escapeHtml(col.label)} ${wipHtml}</span>
+          <div class="col-header-right">
+            <span class="kanban-column-count">${colTasks.length}</span>
+          </div>
         </div>
-        ${colTasks.map(task => {
-          const catColor = getCategoryColor(task.category);
-          const priorityIcon = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢';
-          let subtaskHtml = '';
-          if (task.subtaskTotal > 0) {
-            const pct = Math.round((task.subtaskDone / task.subtaskTotal) * 100);
-            subtaskHtml = `<span class="badge subtask-progress"><span class="progress-bar"><span class="progress-fill" style="width:${pct}%"></span></span>${task.subtaskDone}/${task.subtaskTotal}</span>`;
+        <div class="kanban-column-cards" data-column="${col.key}"
+          ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)"
+          ondrop="handleDrop(event, '${col.key}')">
+          ${colTasks.map(task => renderKanbanCard(task)).join('')}
+        </div>
+        <div class="kanban-column-footer">
+          ${inlineAddColumn === col.key
+            ? renderInlineAddForm(col.key)
+            : `<button class="add-card-btn" onclick="showInlineAddCard('${col.key}')">+ Add a card</button>`
           }
-          const dueDate = task.dueDate ? formatDate(new Date(task.dueDate)) : '';
-
-          // Age indicator
-          const ageDays = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 86400000);
-          let ageStr = '';
-          let ageClass = 'kanban-card-age';
-          if (task.status !== 'completed' && task.status !== 'archived') {
-            if (ageDays > 30) { ageStr = `${Math.floor(ageDays / 7)}w old`; ageClass += ' very-stale'; }
-            else if (ageDays > 14) { ageStr = `${Math.floor(ageDays / 7)}w old`; ageClass += ' stale'; }
-            else if (ageDays > 3) { ageStr = `${ageDays}d old`; }
-          }
-
-          return `
-            <div class="kanban-card" draggable="true"
-              ondragstart="handleDragStart(event, ${task.id})"
-              ondragend="handleDragEnd(event)"
-              ondblclick="openEditModal(${task.id})">
-              <div class="kanban-card-name">${escapeHtml(task.name)}</div>
-              <div class="kanban-card-meta">
-                <span class="badge priority-${task.priority}">${priorityIcon}</span>
-                <span class="badge category-badge"><span class="category-dot" style="background:${catColor}"></span>${escapeHtml(task.category)}</span>
-                ${dueDate ? `<span class="badge due-date">${dueDate}</span>` : ''}
-                ${task.recurring ? `<span class="badge recurring-badge">🔁</span>` : ''}
-                ${subtaskHtml}
-              </div>
-              ${ageStr ? `<div class="${ageClass}">${ageStr}</div>` : ''}
-            </div>
-          `;
-        }).join('')}
+        </div>
       </div>
+    `;
+  }).join('');
+
+  // Re-focus inline add textarea if open
+  if (inlineAddColumn) {
+    const ta = document.getElementById('inline-card-input');
+    if (ta) ta.focus();
+  }
+}
+
+function renderKanbanCard(task) {
+  const catColor = getCategoryColor(task.category);
+  const priorityColors = { high: '#eb5a46', medium: '#f5cd47', low: '#4bce97' };
+  const hasDescription = !!task.description;
+  const isCompleted = task.status === 'completed' || task.status === 'archived';
+  const isTimerActive = !!activeTimers[task.id];
+
+  // Due date badge
+  let dueBadge = '';
+  if (task.dueDate) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d = new Date(task.dueDate); d.setHours(0, 0, 0, 0);
+    const diff = Math.floor((d - today) / 86400000);
+    let dueClass = 'card-badge-due-ok';
+    if (!isCompleted) {
+      if (diff < 0) dueClass = 'card-badge-overdue';
+      else if (diff <= 1) dueClass = 'card-badge-due-soon';
+    }
+    dueBadge = `<span class="card-badge ${dueClass}" title="${task.dueDate}">&#128197; ${formatDate(new Date(task.dueDate))}</span>`;
+  }
+
+  // Subtask badge
+  let subtaskBadge = '';
+  if (task.subtaskTotal > 0) {
+    subtaskBadge = `<span class="card-badge" title="${task.subtaskDone}/${task.subtaskTotal} complete">&#9745; ${task.subtaskDone}/${task.subtaskTotal}</span>`;
+  }
+
+  // Description icon
+  let descIcon = hasDescription ? '<span class="card-badge" title="Has description">&#9776;</span>' : '';
+
+  // Timer icon
+  let timerBadge = '';
+  if (isTimerActive) {
+    timerBadge = `<span class="card-badge card-badge-timer-active" title="Timer running" id="timer-${task.id}">&#9201;</span>`;
+  }
+
+  // Recurring icon
+  let recurBadge = task.recurring ? '<span class="card-badge" title="Recurring">&#128257;</span>' : '';
+
+  const badges = [dueBadge, subtaskBadge, descIcon, timerBadge, recurBadge].filter(Boolean).join('');
+
+  return `
+    <div class="kanban-card" draggable="true"
+      data-task-id="${task.id}"
+      onclick="openCardDetail(${task.id})"
+      ondragstart="handleDragStart(event, ${task.id})"
+      ondragend="handleDragEnd(event)">
+      <div class="card-labels">
+        <span class="card-label" style="background:${catColor};" title="${escapeHtml(task.category)}"></span>
+        <span class="card-label" style="background:${priorityColors[task.priority]};" title="${task.priority} priority"></span>
+      </div>
+      <div class="kanban-card-name ${isCompleted ? 'completed-card' : ''}">${escapeHtml(task.name)}</div>
+      ${badges ? `<div class="card-badges">${badges}</div>` : ''}
+      <button class="card-edit-pencil" onclick="event.stopPropagation(); openCardDetail(${task.id})" title="Edit">&#9998;</button>
+    </div>
+  `;
+}
+
+// ==================== INLINE ADD CARD ====================
+
+function renderInlineAddForm(columnKey) {
+  return `
+    <div class="add-card-compose">
+      <textarea id="inline-card-input" placeholder="Enter a title for this card..."
+        onkeydown="handleInlineCardKeydown(event)"></textarea>
+      <div class="add-card-compose-actions">
+        <button class="add-card-submit" onclick="submitInlineCard()">Add Card</button>
+        <button class="add-card-cancel" onclick="hideInlineAddCard()">&times;</button>
+      </div>
+    </div>
+  `;
+}
+
+function showInlineAddCard(columnKey) {
+  inlineAddColumn = columnKey;
+  renderKanban();
+}
+
+function hideInlineAddCard() {
+  inlineAddColumn = null;
+  renderKanban();
+}
+
+function handleInlineCardKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitInlineCard();
+  }
+  if (e.key === 'Escape') {
+    hideInlineAddCard();
+  }
+}
+
+async function submitInlineCard() {
+  const input = document.getElementById('inline-card-input');
+  if (!input) return;
+  const name = input.value.trim();
+  if (!name) return;
+
+  try {
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, status: inlineAddColumn })
+    });
+    if (!response.ok) throw new Error('Failed to create task');
+
+    input.value = '';
+    await loadTasks();
+    await loadStats();
+    // Keep compose area open for rapid entry
+    const ta = document.getElementById('inline-card-input');
+    if (ta) ta.focus();
+  } catch (err) {
+    alert('Error creating card: ' + err.message);
+  }
+}
+
+// ==================== CARD DETAIL MODAL (Trello-style) ====================
+
+async function openCardDetail(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  cardDetailTaskId = taskId;
+  currentEditingId = taskId;
+
+  // Title
+  const titleEl = document.getElementById('card-detail-title');
+  titleEl.textContent = task.name;
+
+  // Status
+  document.getElementById('card-detail-status').textContent = task.status;
+
+  // Description
+  const descEl = document.getElementById('card-detail-description');
+  descEl.textContent = task.description || '';
+
+  // Labels bar
+  const catColor = getCategoryColor(task.category);
+  const priorityColors = { high: '#eb5a46', medium: '#f5cd47', low: '#4bce97' };
+  document.getElementById('card-detail-labels-bar').innerHTML = `
+    <span class="card-detail-label" style="background:${catColor};min-width:48px;" title="${escapeHtml(task.category)}"></span>
+    <span class="card-detail-label" style="background:${priorityColors[task.priority]};min-width:48px;" title="${task.priority} priority"></span>
+  `;
+
+  // Timer button
+  renderCardTimerBtn(task);
+
+  // Sidebar metadata
+  renderCardDetailMeta(task);
+
+  // Load subtasks
+  const subtasks = await loadSubtasks(taskId);
+  renderCardDetailSubtasks(subtasks);
+
+  // Load notes
+  const notes = await loadNotes(taskId);
+  renderCardDetailNotes(notes);
+
+  // Show overlay
+  document.getElementById('card-detail-overlay').classList.add('active');
+
+  // Auto-save on blur
+  setupCardDetailAutoSave(task);
+}
+
+function closeCardDetail() {
+  document.getElementById('card-detail-overlay').classList.remove('active');
+  cardDetailTaskId = null;
+  currentEditingId = null;
+  // Close any open pickers
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+  loadTasks();
+}
+
+function handleCardDetailOverlayClick(e) {
+  if (e.target === document.getElementById('card-detail-overlay')) {
+    closeCardDetail();
+  }
+}
+
+function setupCardDetailAutoSave(task) {
+  const titleEl = document.getElementById('card-detail-title');
+  const descEl = document.getElementById('card-detail-description');
+
+  titleEl.onblur = async () => {
+    const newName = titleEl.textContent.trim();
+    if (newName && newName !== task.name) {
+      await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName })
+      });
+      task.name = newName;
+    }
+  };
+
+  titleEl.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+  };
+
+  descEl.onblur = async () => {
+    const newDesc = descEl.textContent.trim();
+    if (newDesc !== (task.description || '')) {
+      await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: newDesc || null })
+      });
+      task.description = newDesc || null;
+    }
+  };
+}
+
+function renderCardDetailSubtasks(subtasks) {
+  const section = document.getElementById('card-detail-subtasks-section');
+  const list = document.getElementById('card-detail-subtask-list');
+  const progressEl = document.getElementById('card-detail-subtask-progress');
+
+  section.style.display = subtasks.length > 0 || cardDetailTaskId ? '' : 'none';
+
+  if (subtasks.length > 0) {
+    const done = subtasks.filter(s => s.completed).length;
+    const pct = Math.round((done / subtasks.length) * 100);
+    progressEl.innerHTML = `
+      <div class="subtask-progress-pct">${pct}%</div>
+      <div class="subtask-progress-track">
+        <div class="subtask-progress-fill ${pct === 100 ? 'complete' : ''}" style="width:${pct}%"></div>
+      </div>
+    `;
+  } else {
+    progressEl.innerHTML = '';
+  }
+
+  list.innerHTML = subtasks.map(st => `
+    <li class="card-detail-checklist-item">
+      <input type="checkbox" ${st.completed ? 'checked' : ''} onchange="toggleSubtask(${st.id}, this.checked)">
+      <span class="subtask-text ${st.completed ? 'done' : ''}">${escapeHtml(st.name)}</span>
+      <button class="delete-subtask-btn" onclick="deleteSubtask(${st.id})">✕</button>
+    </li>
+  `).join('');
+}
+
+async function addSubtaskFromDetail() {
+  if (!cardDetailTaskId) return;
+  const input = document.getElementById('card-detail-new-subtask');
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await fetch(`/api/tasks/${cardDetailTaskId}/subtasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    input.value = '';
+    renderCardDetailSubtasks(await loadSubtasks(cardDetailTaskId));
+  } catch (err) { alert('Error adding subtask: ' + err.message); }
+}
+
+function renderCardDetailNotes(notes) {
+  const list = document.getElementById('card-detail-notes-list');
+  list.innerHTML = notes.map(note => {
+    const time = new Date(note.createdAt).toLocaleString();
+    const isEvent = note.type === 'event';
+    return `
+      <li class="card-detail-activity-item ${isEvent ? 'event' : ''}">
+        <div class="activity-header">
+          <span class="activity-time">${time}</span>
+          ${!isEvent ? `<button class="delete-note-btn" onclick="deleteNote(${note.id})">✕</button>` : ''}
+        </div>
+        <div class="activity-content">${escapeHtml(note.content)}</div>
+      </li>
     `;
   }).join('');
 }
 
+async function addNoteFromDetail() {
+  if (!cardDetailTaskId) return;
+  const input = document.getElementById('card-detail-new-note');
+  const content = input.value.trim();
+  if (!content) return;
+  try {
+    await fetch(`/api/tasks/${cardDetailTaskId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    input.value = '';
+    renderCardDetailNotes(await loadNotes(cardDetailTaskId));
+  } catch (err) { alert('Error adding note: ' + err.message); }
+}
+
+function renderCardTimerBtn(task) {
+  const btn = document.getElementById('card-detail-timer-btn');
+  const isActive = !!activeTimers[task.id];
+  if (isActive) {
+    btn.textContent = 'Stop Timer';
+    btn.className = 'sidebar-btn timer-active';
+  } else {
+    btn.textContent = 'Start Timer';
+    btn.className = 'sidebar-btn';
+  }
+}
+
+async function toggleCardTimer() {
+  if (!cardDetailTaskId) return;
+  const isActive = !!activeTimers[cardDetailTaskId];
+  if (isActive) {
+    await stopTimer(cardDetailTaskId);
+  } else {
+    await startTimer(cardDetailTaskId);
+  }
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (task) {
+    renderCardTimerBtn(task);
+    renderCardDetailMeta(task);
+  }
+}
+
+function renderCardDetailMeta(task) {
+  const el = document.getElementById('card-detail-meta');
+  const catColor = getCategoryColor(task.category);
+  let html = '';
+
+  html += `<div class="sidebar-meta-item"><span>Category</span><span class="meta-val"><span class="category-dot" style="background:${catColor};display:inline-block;vertical-align:middle;margin-right:4px;"></span>${escapeHtml(task.category)}</span></div>`;
+  html += `<div class="sidebar-meta-item"><span>Priority</span><span class="meta-val">${task.priority}</span></div>`;
+  html += `<div class="sidebar-meta-item"><span>Status</span><span class="meta-val">${task.status}</span></div>`;
+
+  if (task.dueDate) {
+    html += `<div class="sidebar-meta-item"><span>Due</span><span class="meta-val">${formatDate(new Date(task.dueDate))}</span></div>`;
+  }
+  if (task.recurring) {
+    html += `<div class="sidebar-meta-item"><span>Recurring</span><span class="meta-val">${task.recurring}</span></div>`;
+  }
+  if (task.timeSpent > 0) {
+    html += `<div class="sidebar-meta-item"><span>Time Spent</span><span class="meta-val">${formatDuration(task.timeSpent)}</span></div>`;
+  }
+  const created = new Date(task.createdAt).toLocaleDateString();
+  html += `<div class="sidebar-meta-item"><span>Created</span><span class="meta-val">${created}</span></div>`;
+
+  el.innerHTML = html;
+}
+
+async function deleteCurrentCard() {
+  if (!cardDetailTaskId) return;
+  if (!confirm('Delete this card?')) return;
+  try {
+    await fetch(`/api/tasks/${cardDetailTaskId}`, { method: 'DELETE' });
+    stopTimerDisplay(cardDetailTaskId);
+    delete activeTimers[cardDetailTaskId];
+    closeCardDetail();
+    await loadTasks();
+    await loadStats();
+  } catch (err) {
+    alert('Error deleting card: ' + err.message);
+  }
+}
+
+// ==================== SIDEBAR PICKERS ====================
+
+function togglePicker(name) {
+  const picker = document.getElementById(`picker-${name}`);
+  const isOpen = picker.classList.contains('show');
+
+  // Close all pickers first
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+
+  if (isOpen) return;
+
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (!task) return;
+
+  if (name === 'category') {
+    picker.innerHTML = categories.map(cat =>
+      `<button class="sidebar-picker-option ${cat.name === task.category ? 'selected' : ''}" onclick="setCardCategory('${escapeHtml(cat.name)}')">
+        <span class="sidebar-picker-dot" style="background:${cat.color}"></span> ${escapeHtml(cat.name)}
+      </button>`
+    ).join('');
+  } else if (name === 'priority') {
+    const opts = [
+      { val: 'high', label: 'High', color: '#eb5a46' },
+      { val: 'medium', label: 'Medium', color: '#f5cd47' },
+      { val: 'low', label: 'Low', color: '#4bce97' }
+    ];
+    picker.innerHTML = opts.map(o =>
+      `<button class="sidebar-picker-option ${o.val === task.priority ? 'selected' : ''}" onclick="setCardPriority('${o.val}')">
+        <span class="sidebar-picker-dot" style="background:${o.color}"></span> ${o.label}
+      </button>`
+    ).join('');
+  } else if (name === 'due-date') {
+    picker.innerHTML = `
+      <input type="date" value="${task.dueDate ? task.dueDate.split('T')[0] : ''}" onchange="setCardDueDate(this.value)">
+      <button class="sidebar-picker-option" style="margin-top:4px;color:#eb5a46;" onclick="setCardDueDate('')">Remove due date</button>
+    `;
+  } else if (name === 'recurring') {
+    const opts = ['', 'daily', 'weekly', 'monthly', 'yearly'];
+    const labels = { '': 'None', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' };
+    picker.innerHTML = opts.map(o =>
+      `<button class="sidebar-picker-option ${(task.recurring || '') === o ? 'selected' : ''}" onclick="setCardRecurring('${o}')">${labels[o]}</button>`
+    ).join('');
+  } else if (name === 'move') {
+    const statuses = ['backlog', 'pending', 'completed', 'archived'];
+    picker.innerHTML = statuses.map(s =>
+      `<button class="sidebar-picker-option ${s === task.status ? 'selected' : ''}" onclick="setCardStatus('${s}')">${s.charAt(0).toUpperCase() + s.slice(1)}</button>`
+    ).join('');
+  }
+
+  picker.classList.add('show');
+}
+
+async function setCardCategory(cat) {
+  if (!cardDetailTaskId) return;
+  await updateTask(cardDetailTaskId, { category: cat });
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (task) {
+    task.category = cat;
+    renderCardDetailMeta(task);
+    // Update labels
+    const catColor = getCategoryColor(cat);
+    const priorityColors = { high: '#eb5a46', medium: '#f5cd47', low: '#4bce97' };
+    document.getElementById('card-detail-labels-bar').innerHTML = `
+      <span class="card-detail-label" style="background:${catColor};min-width:48px;" title="${escapeHtml(cat)}"></span>
+      <span class="card-detail-label" style="background:${priorityColors[task.priority]};min-width:48px;" title="${task.priority} priority"></span>
+    `;
+  }
+}
+
+async function setCardPriority(priority) {
+  if (!cardDetailTaskId) return;
+  await updateTask(cardDetailTaskId, { priority });
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (task) {
+    task.priority = priority;
+    renderCardDetailMeta(task);
+    const catColor = getCategoryColor(task.category);
+    const priorityColors = { high: '#eb5a46', medium: '#f5cd47', low: '#4bce97' };
+    document.getElementById('card-detail-labels-bar').innerHTML = `
+      <span class="card-detail-label" style="background:${catColor};min-width:48px;" title="${escapeHtml(task.category)}"></span>
+      <span class="card-detail-label" style="background:${priorityColors[priority]};min-width:48px;" title="${priority} priority"></span>
+    `;
+  }
+}
+
+async function setCardDueDate(date) {
+  if (!cardDetailTaskId) return;
+  await updateTask(cardDetailTaskId, { dueDate: date || null });
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (task) {
+    task.dueDate = date || null;
+    renderCardDetailMeta(task);
+  }
+}
+
+async function setCardRecurring(pattern) {
+  if (!cardDetailTaskId) return;
+  if (pattern) {
+    await fetch(`/api/tasks/${cardDetailTaskId}/recurring`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern })
+    });
+  } else {
+    await fetch(`/api/tasks/${cardDetailTaskId}/recurring`, { method: 'DELETE' });
+  }
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (task) {
+    task.recurring = pattern || null;
+    renderCardDetailMeta(task);
+  }
+}
+
+async function setCardStatus(status) {
+  if (!cardDetailTaskId) return;
+  await updateTask(cardDetailTaskId, { status });
+  document.querySelectorAll('.sidebar-picker.show').forEach(p => p.classList.remove('show'));
+  document.getElementById('card-detail-status').textContent = status;
+  const task = tasks.find(t => t.id === cardDetailTaskId);
+  if (task) {
+    task.status = status;
+    renderCardDetailMeta(task);
+  }
+}
+
+// ==================== DRAG AND DROP ====================
+
 function handleDragStart(e, taskId) {
   e.dataTransfer.setData('text/plain', taskId);
   e.target.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
 }
 
 function handleDragEnd(e) {
   e.target.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
 }
 
 function handleDragOver(e) {
@@ -629,15 +1122,16 @@ function handleDragOver(e) {
 }
 
 function handleDragLeave(e) {
-  e.currentTarget.classList.remove('drag-over');
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    e.currentTarget.classList.remove('drag-over');
+  }
 }
 
-async function handleDrop(e, targetValue, groupBy) {
+async function handleDrop(e, targetStatus) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
   const taskId = parseInt(e.dataTransfer.getData('text/plain'));
-  const update = groupBy === 'status' ? { status: targetValue } : { category: targetValue };
-  await updateTask(taskId, update);
+  await updateTask(taskId, { status: targetStatus });
   renderKanban();
 }
 
@@ -648,11 +1142,8 @@ function toggleSelectMode() {
   selectedIds.clear();
   const tasksList = document.getElementById('tasks-list');
   const bulkBar = document.getElementById('bulk-bar');
-  const toggleBtn = document.getElementById('select-mode-toggle');
   tasksList.classList.toggle('select-mode', selectMode);
   bulkBar.classList.toggle('active', selectMode);
-  toggleBtn.classList.toggle('active', selectMode);
-  toggleBtn.textContent = selectMode ? '☑ Select' : '☐ Select';
   updateSelectedCount();
   filterAndRender();
 }
@@ -722,11 +1213,9 @@ function toggleDropdown(id) {
 
 function exportTasks(format) {
   window.location.href = `/api/export?format=${format}`;
-  document.querySelectorAll('.dropdown-content.show').forEach(d => d.classList.remove('show'));
 }
 
 function importTasks() {
-  document.querySelectorAll('.dropdown-content.show').forEach(d => d.classList.remove('show'));
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json';
@@ -807,7 +1296,7 @@ function renderAnalyticsSummary(summary, velocity) {
 function renderTimeByCategoryChart(data) {
   const container = document.getElementById('chart-time-by-category');
   if (data.length === 0) {
-    container.innerHTML = '<div style="color:#64748b;padding:20px;">No time data yet</div>';
+    container.innerHTML = '<div style="color:#738496;padding:20px;">No time data yet</div>';
     return;
   }
   const maxTime = Math.max(...data.map(d => d.totalTime), 1);
@@ -829,7 +1318,7 @@ function renderTimeByCategoryChart(data) {
 function renderCompletionsChart(data) {
   const svg = document.getElementById('completions-svg');
   if (data.length === 0) {
-    svg.innerHTML = '<text x="50%" y="100" text-anchor="middle" fill="#64748b" font-size="14">No completions in last 30 days</text>';
+    svg.innerHTML = '<text x="50%" y="100" text-anchor="middle" fill="#738496" font-size="14">No completions in last 30 days</text>';
     return;
   }
 
@@ -850,36 +1339,32 @@ function renderCompletionsChart(data) {
   });
 
   const polyline = points.map(p => `${p.x},${p.y}`).join(' ');
-
-  // Fill area
   const areaPoints = [
     `${padding.left},${padding.top + chartHeight}`,
     ...points.map(p => `${p.x},${p.y}`),
     `${points[points.length - 1].x},${padding.top + chartHeight}`
   ].join(' ');
 
-  // Y axis labels
-  const yLabels = [0, Math.ceil(maxCount / 2), maxCount].map((val, i) => {
+  const yLabels = [0, Math.ceil(maxCount / 2), maxCount].map((val) => {
     const y = padding.top + chartHeight - (val / maxCount) * chartHeight;
-    return `<text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="11">${val}</text>
-            <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
+    return `<text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" fill="#738496" font-size="11">${val}</text>
+            <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#22272b" stroke-width="1"/>`;
   }).join('');
 
-  // X axis labels (show first, middle, last)
   const xLabels = [0, Math.floor(data.length / 2), data.length - 1]
     .filter((v, i, a) => a.indexOf(v) === i)
     .map(i => {
       if (!points[i]) return '';
-      const label = data[i].date.substring(5); // MM-DD
-      return `<text x="${points[i].x}" y="${height - 8}" text-anchor="middle" fill="#64748b" font-size="11">${label}</text>`;
+      const label = data[i].date.substring(5);
+      return `<text x="${points[i].x}" y="${height - 8}" text-anchor="middle" fill="#738496" font-size="11">${label}</text>`;
     }).join('');
 
   svg.innerHTML = `
     ${yLabels}
     ${xLabels}
-    <polygon points="${areaPoints}" fill="rgba(59,130,246,0.1)"/>
-    <polyline points="${polyline}" fill="none" stroke="#3b82f6" stroke-width="2"/>
-    ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#3b82f6"/>`).join('')}
+    <polygon points="${areaPoints}" fill="rgba(86,157,255,0.1)"/>
+    <polyline points="${polyline}" fill="none" stroke="#579dff" stroke-width="2"/>
+    ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#579dff"/>`).join('')}
   `;
 }
 
@@ -888,7 +1373,7 @@ function renderCompletionsChart(data) {
 function renderFlowChart(data) {
   const container = document.getElementById('chart-task-flow');
   if (!data.chartData || data.chartData.length === 0) {
-    container.innerHTML = '<div style="color:#64748b;padding:20px;">No flow data yet. Move tasks between kanban columns to generate flow data.</div>';
+    container.innerHTML = '<div style="color:#738496;padding:20px;">No flow data yet. Move tasks between columns to generate flow data.</div>';
     return;
   }
 
@@ -896,34 +1381,33 @@ function renderFlowChart(data) {
 
   let html = `
     <div class="flow-legend">
-      <span><span class="flow-legend-dot" style="background:#22c55e;"></span> Progression (forward)</span>
-      <span><span class="flow-legend-dot" style="background:#ef4444;"></span> Regression (backward)</span>
-      <span style="margin-left:auto;">Total: ${data.summary.totalProgressions} fwd / ${data.summary.totalRegressions} back</span>
+      <span><span class="flow-legend-dot" style="background:#4bce97;"></span> Progression</span>
+      <span><span class="flow-legend-dot" style="background:#eb5a46;"></span> Regression</span>
+      <span style="margin-left:auto;">${data.summary.totalProgressions} fwd / ${data.summary.totalRegressions} back</span>
     </div>
   `;
 
   html += data.chartData.map(d => {
     const pPct = Math.round((d.progressions / maxVal) * 100);
     const rPct = Math.round((d.regressions / maxVal) * 100);
-    const dateLabel = d.date.substring(5); // MM-DD
+    const dateLabel = d.date.substring(5);
     return `
       <div class="flow-row">
         <span class="flow-label">${dateLabel}</span>
         <div class="flow-bar-container">
           <div class="flow-bar-progress" style="width:${pPct}%;" title="${d.progressions} progressions"></div>
-          ${d.progressions > 0 ? `<span class="flow-bar-value" style="color:#22c55e;">${d.progressions}</span>` : ''}
+          ${d.progressions > 0 ? `<span class="flow-bar-value" style="color:#4bce97;">${d.progressions}</span>` : ''}
         </div>
         <div class="flow-bar-container" style="flex-direction:row-reverse;">
           <div class="flow-bar-regress" style="width:${rPct}%;" title="${d.regressions} regressions"></div>
-          ${d.regressions > 0 ? `<span class="flow-bar-value" style="color:#ef4444;margin-left:0;margin-right:4px;">${d.regressions}</span>` : ''}
+          ${d.regressions > 0 ? `<span class="flow-bar-value" style="color:#eb5a46;margin-left:0;margin-right:4px;">${d.regressions}</span>` : ''}
         </div>
       </div>
     `;
   }).join('');
 
-  // Transition matrix summary
   if (Object.keys(data.matrix).length > 0) {
-    html += '<div style="margin-top:12px;font-size:12px;color:#94a3b8;">';
+    html += '<div style="margin-top:12px;font-size:12px;color:#738496;">';
     html += '<strong>Transition breakdown:</strong> ';
     html += Object.entries(data.matrix)
       .sort((a, b) => b[1] - a[1])
@@ -938,7 +1422,7 @@ function renderFlowChart(data) {
 function renderCumulativeFlow(snapshots) {
   const svg = document.getElementById('cumulative-flow-svg');
   if (!snapshots || snapshots.length === 0) {
-    svg.innerHTML = '<text x="50%" y="100" text-anchor="middle" fill="#64748b" font-size="14">No data</text>';
+    svg.innerHTML = '<text x="50%" y="100" text-anchor="middle" fill="#738496" font-size="14">No data</text>';
     return;
   }
 
@@ -951,26 +1435,21 @@ function renderCumulativeFlow(snapshots) {
   svg.setAttribute('width', width);
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
-  const statuses = ['archived', 'completed', 'pending', 'backlog']; // bottom to top stacking
-  const colors = { backlog: '#64748b', pending: '#3b82f6', completed: '#22c55e', archived: '#475569' };
+  const statuses = ['archived', 'completed', 'pending', 'backlog'];
+  const colors = { backlog: '#738496', pending: '#579dff', completed: '#4bce97', archived: '#3d454d' };
 
-  // Compute max total
   const maxTotal = Math.max(...snapshots.map(s => s.backlog + s.pending + s.completed + s.archived), 1);
-
-  // Build stacked areas
   const n = snapshots.length;
   let svgContent = '';
 
-  // Y axis labels
   const yTicks = [0, Math.ceil(maxTotal / 2), maxTotal];
   svgContent += yTicks.map(val => {
     const y = padding.top + chartHeight - (val / maxTotal) * chartHeight;
-    return `<text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" fill="#64748b" font-size="11">${val}</text>
-            <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#1e293b" stroke-width="1"/>`;
+    return `<text x="${padding.left - 8}" y="${y + 4}" text-anchor="end" fill="#738496" font-size="11">${val}</text>
+            <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#22272b" stroke-width="1"/>`;
   }).join('');
 
-  // Draw stacked areas (bottom to top)
-  let prevY = snapshots.map(() => padding.top + chartHeight); // baseline
+  let prevY = snapshots.map(() => padding.top + chartHeight);
 
   for (const status of statuses) {
     const points = [];
@@ -983,7 +1462,6 @@ function renderCumulativeFlow(snapshots) {
       newPrevY.push(y);
     }
 
-    // Create area polygon: top line + reversed bottom line
     const topLine = points.map(p => `${p.x},${p.y}`).join(' ');
     const bottomLine = prevY.map((y, i) => {
       const x = padding.left + (i / Math.max(n - 1, 1)) * chartWidth;
@@ -994,17 +1472,15 @@ function renderCumulativeFlow(snapshots) {
     prevY = newPrevY;
   }
 
-  // X axis labels
   const labelIndexes = [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor(3 * n / 4), n - 1]
     .filter((v, i, a) => a.indexOf(v) === i && v < n);
   svgContent += labelIndexes.map(i => {
     const x = padding.left + (i / Math.max(n - 1, 1)) * chartWidth;
-    return `<text x="${x}" y="${height - 8}" text-anchor="middle" fill="#64748b" font-size="11">${snapshots[i].date.substring(5)}</text>`;
+    return `<text x="${x}" y="${height - 8}" text-anchor="middle" fill="#738496" font-size="11">${snapshots[i].date.substring(5)}</text>`;
   }).join('');
 
   svg.innerHTML = svgContent;
 
-  // Add legend below SVG
   const legendContainer = svg.parentElement.querySelector('.cfd-legend');
   if (!legendContainer) {
     const leg = document.createElement('div');
@@ -1019,16 +1495,16 @@ function renderCumulativeFlow(snapshots) {
 function renderVelocityChart(data) {
   const container = document.getElementById('chart-velocity');
   if (!data.byStatus || data.byStatus.length === 0) {
-    container.innerHTML = '<div style="color:#64748b;padding:20px;">No velocity data yet. Move tasks through statuses to generate cycle time data.</div>';
+    container.innerHTML = '<div style="color:#738496;padding:20px;">No velocity data yet. Move tasks through statuses to generate cycle time data.</div>';
     return;
   }
 
-  const colors = { backlog: '#64748b', pending: '#3b82f6', completed: '#22c55e', archived: '#475569' };
+  const colors = { backlog: '#738496', pending: '#579dff', completed: '#4bce97', archived: '#3d454d' };
   const maxSeconds = Math.max(...data.byStatus.map(v => v.avgSeconds), 1);
 
   container.innerHTML = data.byStatus.map(v => {
     const pct = Math.round((v.avgSeconds / maxSeconds) * 100);
-    const color = colors[v.status] || '#64748b';
+    const color = colors[v.status] || '#738496';
     const timeStr = v.avgSeconds >= 86400
       ? `${(v.avgSeconds / 86400).toFixed(1)}d`
       : v.avgSeconds >= 3600
@@ -1070,23 +1546,22 @@ async function openInsightsModal() {
     }
     const data = await response.json();
 
-    // Simple markdown-to-HTML rendering
     let html = data.insights
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^### (.+)$/gm, '<h4 style="color:#60a5fa;margin-top:16px;">$1</h4>')
-      .replace(/^## (.+)$/gm, '<h3 style="color:#60a5fa;margin-top:20px;">$1</h3>')
-      .replace(/^# (.+)$/gm, '<h2 style="color:#60a5fa;margin-top:20px;">$1</h2>')
+      .replace(/^### (.+)$/gm, '<h4 style="color:#579dff;margin-top:16px;">$1</h4>')
+      .replace(/^## (.+)$/gm, '<h3 style="color:#579dff;margin-top:20px;">$1</h3>')
+      .replace(/^# (.+)$/gm, '<h2 style="color:#579dff;margin-top:20px;">$1</h2>')
       .replace(/^- (.+)$/gm, '<div style="padding-left:16px;">• $1</div>')
       .replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:16px;">$1. $2</div>')
       .replace(/\n\n/g, '<br><br>')
       .replace(/\n/g, '<br>');
 
-    const cachedNote = data.cached ? '<div style="font-size:11px;color:#64748b;margin-bottom:12px;">Cached result — click Refresh for new analysis</div>' : '';
+    const cachedNote = data.cached ? '<div style="font-size:11px;color:#738496;margin-bottom:12px;">Cached result — click Refresh for new analysis</div>' : '';
     body.innerHTML = `${cachedNote}<div class="insights-body">${html}</div>`;
     refreshBtn.style.display = '';
   } catch (err) {
-    body.innerHTML = `<div style="color:#fca5a5;padding:20px;">Error: ${escapeHtml(err.message)}</div>`;
+    body.innerHTML = `<div style="color:#fd9891;padding:20px;">Error: ${escapeHtml(err.message)}</div>`;
     refreshBtn.style.display = '';
   }
 }
@@ -1109,7 +1584,7 @@ async function loadWipLimits() {
 async function setWipLimit(column) {
   const current = (window._wipLimits || {})[column];
   const input = prompt(`Set WIP limit for "${column}" (leave empty to remove):`, current || '');
-  if (input === null) return; // cancelled
+  if (input === null) return;
 
   const limits = window._wipLimits || {};
   limits[column] = input ? parseInt(input) || null : null;
@@ -1201,7 +1676,6 @@ async function testApiKey() {
   const statusEl = document.getElementById('settings-key-status');
   statusEl.innerHTML = '<div class="field-status info">Testing API key...</div>';
 
-  // If there's a key in the input, save it first
   const inputKey = document.getElementById('settings-api-key').value.trim();
   if (inputKey) {
     try {
@@ -1262,15 +1736,22 @@ function toggleShortcutsHelp() {
 
 document.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
-  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable;
 
   if (e.key === 'Escape') {
+    // Close card detail first, then other modals
+    if (document.getElementById('card-detail-overlay').classList.contains('active')) {
+      closeCardDetail();
+      return;
+    }
+    hideInlineAddCard();
     closeModal();
     closeCategoriesModal();
     closeAnalyticsModal();
     closeInsightsModal();
     closeSettingsModal();
     document.getElementById('shortcuts-modal').classList.remove('active');
+    closeBoardMenu();
     if (isInput) e.target.blur();
     return;
   }
@@ -1280,7 +1761,11 @@ document.addEventListener('keydown', (e) => {
   switch (e.key) {
     case 'n':
       e.preventDefault();
-      openAddModal();
+      if (currentView === 'kanban') {
+        showInlineAddCard('pending');
+      } else {
+        openAddModal();
+      }
       break;
     case '/':
       e.preventDefault();
@@ -1308,7 +1793,11 @@ document.addEventListener('keydown', (e) => {
     case 'Enter':
       e.preventDefault();
       if (focusedTaskIndex >= 0 && lastRenderedTasks[focusedTaskIndex]) {
-        openEditModal(lastRenderedTasks[focusedTaskIndex].id);
+        if (currentView === 'kanban') {
+          openCardDetail(lastRenderedTasks[focusedTaskIndex].id);
+        } else {
+          openEditModal(lastRenderedTasks[focusedTaskIndex].id);
+        }
       }
       break;
   }
@@ -1387,7 +1876,6 @@ function renderTasks(tasksToRender, searchTerm) {
     const isSelected = selectedIds.has(task.id);
     const catColor = getCategoryColor(task.category);
 
-    // Due date urgency
     let dueDateClass = 'due-date';
     let dueDateStr = '';
     if (dueDate) {
@@ -1402,14 +1890,12 @@ function renderTasks(tasksToRender, searchTerm) {
       dueDateStr = formatDate(dueDate);
     }
 
-    // Subtask progress
     let subtaskHtml = '';
     if (task.subtaskTotal > 0) {
       const pct = Math.round((task.subtaskDone / task.subtaskTotal) * 100);
       subtaskHtml = `<span class="badge subtask-progress"><span class="progress-bar"><span class="progress-fill" style="width:${pct}%"></span></span>${task.subtaskDone}/${task.subtaskTotal}</span>`;
     }
 
-    // Time display
     let timeHtml = '';
     if (task.timeSpent > 0 || isTimerActive) {
       timeHtml = `<span class="badge time-display">⏱ ${formatDuration(task.timeSpent || 0)}</span>`;
@@ -1418,7 +1904,6 @@ function renderTasks(tasksToRender, searchTerm) {
       timeHtml += `<span class="badge timer-badge active" id="timer-${task.id}">...</span>`;
     }
 
-    // Description snippet on search match
     let descSnippet = '';
     if (searchTerm && task.description && task.description.toLowerCase().includes(searchTerm)) {
       descSnippet = `<div class="task-description-snippet">${highlightText(task.description.substring(0, 120), searchTerm)}${task.description.length > 120 ? '...' : ''}</div>`;
@@ -1438,24 +1923,23 @@ function renderTasks(tasksToRender, searchTerm) {
           ${descSnippet}
           <div class="task-meta">
             <span class="badge priority-${task.priority}">
-              ${task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢'}
               ${task.priority}
             </span>
             <span class="badge category-badge">
               <span class="category-dot" style="background:${catColor}"></span>
               ${escapeHtml(task.category)}
             </span>
-            ${task.status === 'backlog' ? '<span class="badge backlog-badge">📥 backlog</span>' : ''}
-            ${task.dueDate ? `<span class="badge ${dueDateClass}">📅 ${dueDateStr}</span>` : ''}
-            ${task.recurring ? `<span class="badge recurring-badge">🔁 ${task.recurring}</span>` : ''}
+            ${task.status === 'backlog' ? '<span class="badge backlog-badge">backlog</span>' : ''}
+            ${task.dueDate ? `<span class="badge ${dueDateClass}">${dueDateStr}</span>` : ''}
+            ${task.recurring ? `<span class="badge recurring-badge">${task.recurring}</span>` : ''}
             ${subtaskHtml}
             ${timeHtml}
           </div>
         </div>
         <div class="task-actions">
           ${isTimerActive
-            ? `<button class="timer-btn stop" onclick="stopTimer(${task.id})">⏹ Stop</button>`
-            : `<button class="timer-btn" onclick="startTimer(${task.id})">▶ Timer</button>`
+            ? `<button class="timer-btn stop" onclick="stopTimer(${task.id})">Stop</button>`
+            : `<button class="timer-btn" onclick="startTimer(${task.id})">Timer</button>`
           }
           <button class="secondary" onclick="openEditModal(${task.id})">Edit</button>
           <button class="danger" onclick="deleteTask(${task.id})">Delete</button>
@@ -1466,7 +1950,6 @@ function renderTasks(tasksToRender, searchTerm) {
 
   if (selectMode) list.classList.add('select-mode');
 
-  // Restart timer displays
   Object.keys(activeTimers).forEach(taskId => {
     const timer = activeTimers[taskId];
     if (document.getElementById(`timer-${taskId}`)) {
@@ -1474,7 +1957,6 @@ function renderTasks(tasksToRender, searchTerm) {
     }
   });
 
-  // Restore focus visual
   if (focusedTaskIndex >= 0) updateFocusVisual();
 }
 
@@ -1493,7 +1975,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// ==================== MODAL FUNCTIONS ====================
+// ==================== MODAL FUNCTIONS (List View) ====================
 
 function openAddModal() {
   currentEditingId = null;
@@ -1525,12 +2007,10 @@ async function openEditModal(taskId) {
   document.getElementById('task-status-group').style.display = 'block';
   document.getElementById('task-status').value = task.status;
 
-  // Show subtasks section
   document.getElementById('subtasks-section').style.display = 'block';
   const subtasks = await loadSubtasks(taskId);
   renderSubtaskList(subtasks);
 
-  // Show notes section
   document.getElementById('notes-section').style.display = 'block';
   const notes = await loadNotes(taskId);
   renderNotesList(notes);
@@ -1552,7 +2032,6 @@ function handleSaveTask(e) {
     priority: document.getElementById('task-priority').value,
     dueDate: document.getElementById('task-due-date').value || null
   };
-  // Include status when editing
   if (currentEditingId) {
     taskData.status = document.getElementById('task-status').value;
   }

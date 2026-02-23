@@ -525,7 +525,7 @@ app.get('/api/tasks/:id', async (req, res) => {
 // POST create task
 app.post('/api/tasks', async (req, res) => {
   try {
-    let { name, description, category = 'general', priority = 'medium', dueDate } = req.body;
+    let { name, description, category = 'general', priority = 'medium', dueDate, status = 'pending' } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Task name required' });
@@ -535,9 +535,13 @@ app.post('/api/tasks', async (req, res) => {
       priority = 'medium';
     }
 
+    if (!['backlog', 'pending', 'completed', 'archived'].includes(status)) {
+      status = 'pending';
+    }
+
     const result = await dbRun(
-      'INSERT INTO tasks (name, description, category, priority, dueDate) VALUES (?, ?, ?, ?, ?)',
-      [name, description || null, category, priority, dueDate || null]
+      'INSERT INTO tasks (name, description, category, priority, dueDate, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, description || null, category, priority, dueDate || null, status]
     );
 
     await logEvent(result.lastID, 'Task created');
