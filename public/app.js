@@ -1,5 +1,22 @@
 /**
- * Task Dashboard Frontend — Trello-style Board
+ * Task Dashboard — Frontend Logic (Trello-style Board)
+ *
+ * All client-side behavior for the task dashboard. No frameworks, no build step —
+ * just plain JavaScript talking to the REST API in server.js.
+ *
+ * What this file does:
+ *   - Renders a Trello-style Kanban board with four columns (Backlog, Pending, Completed, Archived)
+ *   - Compact card rendering with label bars, badges, hover actions, and drag-and-drop
+ *   - Inline "Add a card" at the bottom of each column (Enter to submit, Escape to cancel)
+ *   - Card detail modal with two-column layout: main content (title, description, subtasks,
+ *     notes/activity) + action sidebar (category, priority, due date, recurring, move, timer, delete)
+ *   - Auto-saves card title and description on blur (contenteditable)
+ *   - Board header with inline stats, compact filter inputs, and a "..." menu dropdown
+ *   - List view preserved as an alternative (accessible via board menu)
+ *   - Bulk operations, export/import, analytics panel, AI insights, WIP limits, keyboard shortcuts
+ *   - Polls the API every 10 seconds to stay in sync with CLI and other clients
+ *
+ * Pairs with: public/index.html (layout + CSS) and server.js (REST API)
  */
 
 let currentEditingId = null;

@@ -1,6 +1,11 @@
 #!/bin/bash
-# Reminder daemon - runs continuously, checks reminders every 30 seconds
-# Start with: nohup ./reminder-daemon.sh > /tmp/reminder-daemon.log 2>&1 &
+# Task Dashboard — Reminder Daemon (Long-running)
+#
+# Loops forever, checking reminders.json every 30 seconds and sending
+# due reminders to Chad via Telegram. Alternative to the cron-based approach.
+# Currently paused — see MEMORY.md for context.
+#
+# Start: nohup ./reminder-daemon.sh > /tmp/reminder-daemon.log 2>&1 &
 
 REMINDERS_FILE="$HOME/.openclaw/workspace/reminders.json"
 USER_ID="REDACTED_TELEGRAM_USER_ID"

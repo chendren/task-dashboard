@@ -1,6 +1,9 @@
 #!/bin/bash
-# Send pending reminders to Chad via Telegram
-# Runs every minute, only sends reminders that are due and pending
+# Task Dashboard — Reminder Sender
+#
+# Processes reminders.json, finds entries that are due and still pending,
+# and sends them to Chad via Telegram using the OpenClaw CLI.
+# Currently paused — see MEMORY.md for context.
 
 REMINDERS_FILE="$HOME/.openclaw/workspace/reminders.json"
 USER_ID="REDACTED_TELEGRAM_USER_ID"

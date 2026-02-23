@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 /**
- * Task Management System - Database Initialization
- * Creates SQLite schema and seeds default data
+ * Task Dashboard — Database Schema Reference
+ *
+ * Creates the SQLite tables used by the task dashboard: tasks, categories,
+ * subtasks, notes, time logs, recurring patterns, status transitions, settings,
+ * and WIP limits. Also seeds default categories if the database is fresh.
+ *
+ * You don't normally need to run this — server.js creates the schema automatically
+ * on first startup. This file exists as a reference for the full database structure
+ * and can be used to re-initialize a blank database if needed.
+ *
+ * Usage: node tasks-init.js
  */
 
 const sqlite3 = require('sqlite3').verbose();

@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 /**
- * Seed 27 realistic demo tasks to showcase all dashboard capabilities.
- * Run: node seed-demo.js
+ * Task Dashboard — Demo Data Seeder
+ *
+ * Populates 27 realistic tasks across all four columns (Backlog, Pending, Completed, Archived)
+ * with subtasks, due dates, notes, time tracking entries, and varied categories/priorities.
+ * Useful for seeing the Trello-style board fully populated before adding your own tasks.
+ *
+ * Requires the dashboard server to be running (calls the REST API on localhost).
+ *
+ * Usage:
+ *   node seed-demo.js            (uses http://localhost:3000)
+ *   PORT=8080 node seed-demo.js  (if server is on a different port)
+ *
+ * You can delete all demo tasks from the board afterwards — they're not special.
  */
 
 const BASE = 'http://localhost:3000';

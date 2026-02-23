@@ -1,6 +1,11 @@
 #!/bin/bash
-# Check and send reminders - runs every minute from cron
-# Uses full paths since cron has limited PATH
+# Task Dashboard — Reminder Checker (Cron)
+#
+# Scans reminders.json for pending reminders and sends them to Chad via Telegram
+# using the OpenClaw CLI. Designed to run every minute from cron.
+# Currently paused — see MEMORY.md for context.
+#
+# Uses full paths since cron has a limited PATH.
 
 REMINDERS_FILE="$HOME/.openclaw/workspace/reminders.json"
 USER_ID="REDACTED_TELEGRAM_USER_ID"

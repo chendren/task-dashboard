@@ -1,7 +1,20 @@
 #!/usr/bin/env node
 /**
- * Task Manager - Telegram Command Handler
- * Handles all task operations via Telegram
+ * Task Dashboard — Command-Line Interface
+ *
+ * Manage tasks from the terminal without opening a browser. Reads and writes
+ * the same SQLite database as the web dashboard, so changes appear everywhere.
+ * Optionally sends Telegram notifications via OpenClaw when tasks are added or completed.
+ *
+ * Usage:
+ *   node task-manager.js add "Buy groceries" "2026-03-01" "high" "personal"
+ *   node task-manager.js list
+ *   node task-manager.js done 5
+ *   node task-manager.js delete 3
+ *   node task-manager.js view 1
+ *   node task-manager.js help
+ *
+ * Part of the Task Dashboard project — see README.md for full documentation.
  */
 
 const sqlite3 = require('sqlite3').verbose();

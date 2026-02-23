@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 /**
- * Migration: Add 'backlog' status + status_transitions table
- * Run once: node migrate-add-backlog.js
- * Backs up DB before migrating.
+ * Task Dashboard — Database Migration: Backlog Status + Status Transitions
+ *
+ * One-time migration that adds the 'backlog' status to the task workflow and creates
+ * the status_transitions table for tracking how tasks move between columns over time.
+ * This data powers the flow analytics and cycle time charts in the dashboard.
+ *
+ * Automatically backs up the database before making changes.
+ *
+ * Usage: node migrate-add-backlog.js   (run once, safe to re-run)
  */
 
 const sqlite3 = require('sqlite3').verbose();

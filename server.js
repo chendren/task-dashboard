@@ -1,9 +1,29 @@
 #!/usr/bin/env node
 /**
- * Task Dashboard Server
- * Serves REST API + web UI for task management
- * Run: node server.js
- * Visit: http://localhost:3000
+ * Task Dashboard — Backend Server
+ *
+ * Express REST API + static file server for a Trello-style task management board.
+ * Stores everything in a local SQLite database — no cloud, no accounts, no subscriptions.
+ *
+ * What this file does:
+ *   - Serves the Trello-style frontend (public/index.html + public/app.js)
+ *   - Provides full CRUD endpoints for tasks, subtasks, notes, categories
+ *   - Tracks time spent on tasks (start/stop timer)
+ *   - Handles recurring task generation (daily, weekly, monthly)
+ *   - Records status transitions for flow analytics and cycle time charts
+ *   - Manages WIP (work-in-progress) limits per column
+ *   - Stores encrypted API keys for Gemini AI integration
+ *   - Proxies AI insight requests to the Google Gemini API
+ *   - Supports import/export of all task data as JSON
+ *
+ * Run:    node server.js
+ * Custom: PORT=8080 node server.js
+ * Visit:  http://localhost:3000
+ *
+ * The same SQLite database is shared with the CLI (task-manager.js) and the
+ * standalone insights script (task-insights.js), so changes sync instantly.
+ *
+ * Part of the Task Dashboard project — see README.md for full documentation.
  */
 
 const express = require('express');

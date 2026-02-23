@@ -1,7 +1,12 @@
 #!/bin/bash
-# Start the Task Dashboard
-# Usage: ./start-dashboard.sh [port]
-# Default port: 3000
+# Task Dashboard — Quick Start Script
+#
+# Starts the Express server that serves the Trello-style board.
+# Pass a port number as the first argument, or it defaults to 3000.
+#
+# Usage:
+#   ./start-dashboard.sh        → http://localhost:3000
+#   ./start-dashboard.sh 8080   → http://localhost:8080
 
 PORT=${1:-3000}
 

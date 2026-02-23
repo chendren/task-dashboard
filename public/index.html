@@ -1,4 +1,19 @@
 <!DOCTYPE html>
+<!--
+  Task Dashboard — Trello-style Board Layout
+
+  The entire UI in a single HTML file: layout structure, CSS styling, and modal shells.
+  All interactive behavior lives in app.js — this file is purely structure and presentation.
+
+  Layout:
+    - Board header (48px): title, inline stats, compact filters, "..." menu dropdown
+    - Board canvas: horizontally scrollable flex container of 272px columns
+    - Card detail modal: two-column overlay (main content + action sidebar)
+    - Preserved modals: analytics, AI insights, settings, categories, shortcuts, edit (list view)
+
+  Theme: Dark Trello aesthetic (#1a1f36 board, #101204 columns, #22272b cards)
+  Responsive: columns go full-width on mobile with horizontal scroll
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">

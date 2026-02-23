@@ -1,9 +1,25 @@
 #!/usr/bin/env node
 /**
- * Task Insights - AI-powered task system analysis
- * Reads all task data, sends to Gemini API for analysis, outputs insights
- * Usage: GEMINI_API_KEY=... node task-insights.js
- *   or:  node task-insights.js  (if GEMINI_API_KEY is in environment or saved in settings)
+ * Task Dashboard — AI Insights (Standalone CLI)
+ *
+ * Reads all task data from the SQLite database (tasks, subtasks, notes, time logs,
+ * status transitions) and sends it to Google Gemini 2.5 Flash for productivity analysis.
+ * Outputs a structured report covering health score, task aging, time allocation,
+ * priority balance, and actionable recommendations.
+ *
+ * The API key can come from three places (checked in order):
+ *   1. GEMINI_API_KEY environment variable
+ *   2. Encrypted key saved in the dashboard's settings table
+ *   3. OpenClaw config at ~/.openclaw/openclaw.json → env.GEMINI_API_KEY
+ *
+ * Usage:
+ *   GEMINI_API_KEY=your-key node task-insights.js
+ *   node task-insights.js   (uses saved or OpenClaw key)
+ *
+ * The same analysis is available in the web dashboard via the AI Insights button.
+ * This script is for running it from the terminal or piping the output elsewhere.
+ *
+ * Part of the Task Dashboard project — see README.md for full documentation.
  */
 
 const sqlite3 = require('sqlite3').verbose();

@@ -1,22 +1,33 @@
 # Task Management System
 
-Full-featured task management with Telegram integration. Stores tasks in SQLite and sends updates via Telegram.
+Full-featured task management with a Trello-style web board, CLI, AI insights, and optional Telegram notifications via OpenClaw.
 
-## Quick Start
+## Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Web Dashboard | `server.js` + `public/` | Trello-style board at http://localhost:3000 |
+| CLI | `task-manager.js` | Terminal-based task management |
+| AI Insights | `task-insights.js` | Gemini-powered productivity analysis |
+| Demo Seeder | `seed-demo.js` | Populate 27 demo tasks |
+| Reminders | `check-reminders.sh` | Telegram notifications (paused) |
+
+All components share the same SQLite database at `~/.openclaw/workspace/tasks.db`.
+
+## CLI Usage
 
 ```bash
-# List all tasks
-node task-manager.js list
-
 # Add a task
 node task-manager.js add "Task name" "due-date" "priority" "category"
-# Example:
-node task-manager.js add "Buy groceries" "2026-02-25" "high" "personal"
+node task-manager.js add "Buy groceries" "2026-03-01" "high" "personal"
+
+# List all tasks
+node task-manager.js list
 
 # Complete a task
 node task-manager.js done <task-id>
 
-# Delete a task  
+# Delete a task
 node task-manager.js delete <task-id>
 
 # View task details
@@ -26,114 +37,52 @@ node task-manager.js view <task-id>
 node task-manager.js help
 ```
 
-## Database
+## Database Schema
 
 **Location:** `~/.openclaw/workspace/tasks.db`
 
 **Tables:**
-- `tasks` - Main tasks table with all fields
-- `categories` - Custom task categories
-- `recurring` - Recurring task patterns
-- `timeLog` - Time tracking entries
+- `tasks` — Main tasks (name, description, category, priority, dueDate, status, recurring, timeSpent, etc.)
+- `subtasks` — Checklist items within tasks
+- `notes` — Activity/comment feed per task
+- `categories` — Custom categories with colors
+- `timeLog` — Start/stop timer entries
+- `recurring` — Recurring task patterns
+- `status_transitions` — Tracks every column move (for flow analytics)
+- `settings` — Key-value store (encrypted API keys, preferences)
+- `wip_limits` — Per-column work-in-progress limits
 
-## Task Fields
+**Task statuses:** `backlog`, `pending`, `completed`, `archived`
 
-- **id:** Auto-increment identifier
-- **name:** Task description (required)
-- **description:** Extended notes
-- **category:** Organize tasks (default: "general")
-- **priority:** low, medium, high
-- **dueDate:** YYYY-MM-DD format
-- **status:** pending, completed, archived
-- **recurring:** daily, weekly, monthly, yearly
-- **timeSpent:** Total seconds tracked
-- **createdAt:** Timestamp
-- **completedAt:** When task was finished
-- **startedAt:** When timer started
+**Priorities:** `low`, `medium`, `high`
 
 ## Integration with OpenClaw
 
-To integrate with Telegram commands, create aliases:
+The task system lives in OpenClaw's workspace directory. Cascade (the AI agent) can:
+- Add and manage tasks via the CLI
+- Query the REST API programmatically
+- Send task notifications via Telegram
+- Run the AI insights analysis
+
+### Telegram Notifications
 
 ```bash
-# Add to your shell aliases or cron
-alias task="node ~/.openclaw/workspace/task-manager.js"
+openclaw message send --channel telegram --target REDACTED_TELEGRAM_USER_ID \
+  --message "Task reminder: Buy groceries"
 ```
 
-Then use:
-```
-/task list
-/task add "name" "2026-02-25" "high" "work"
-/task done 1
-```
+### Cron Integration
 
-## Features (Implemented & Planned)
-
-✅ **Core**
-- Create, list, complete, delete tasks
-- Priorities and categories
-- Due dates
-- Task descriptions
-- Telegram notifications
-
-🔄 **In Progress**
-- Recurring tasks
-- Time tracking
-- Search/filter
-- Web dashboard
-- Archive old tasks
-- Categories management
-
-## Examples
-
-**Add a work task due Friday**
-```
-node task-manager.js add "Finish report" "2026-02-28" "high" "work"
-```
-
-**List all high-priority tasks**
-```
-node task-manager.js list
-# Filter by priority in UI
-```
-
-**Complete task #3**
-```
-node task-manager.js done 3
-```
-
-**View details of task #1**
-```
-node task-manager.js view 1
-```
-
-## Cron Jobs (Optional)
-
-Run daily reminder:
 ```bash
-0 9 * * * node ~/.openclaw/workspace/task-manager.js list | \
-  openclaw message send --channel telegram --target REDACTED_TELEGRAM_USER_ID --message "$(cat)"
+# Daily task summary at 9am
+0 9 * * * cd ~/.openclaw/workspace && node task-manager.js list
+
+# Recurring task generator at 6am
+0 6 * * * cd ~/.openclaw/workspace && node task-manager.js recurring-check
 ```
 
-Recurring task generator:
-```bash
-0 6 * * * node ~/.openclaw/workspace/task-manager.js recurring-check
-```
+## Reminder System (Currently Paused)
 
-## Troubleshooting
-
-**Database locked:** Only one process can write at a time
-```bash
-# Wait a few seconds and retry
-```
-
-**Command not found:** Make sure you're in the workspace directory
-```bash
-cd ~/.openclaw/workspace
-node task-manager.js list
-```
-
-**Messages not sending:** Check Telegram bot is connected
-```bash
-openclaw status | grep Telegram
-```
+Scripts: `check-reminders.sh`, `send-reminders.sh`, `reminder-daemon.sh`
+Database: `reminders.json`
+Status: Disabled — was sending duplicate notifications. Can be re-enabled.
