@@ -1,0 +1,8 @@
+node_modules/
+tasks.db
+tasks.db.bak*
+dashboard.log
+reminders.log
+reminders.json
+.openclaw/
+.pi/
