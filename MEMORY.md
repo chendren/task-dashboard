@@ -3,10 +3,10 @@
 ## Setup (2026-02-22)
 
 **Initial Setup Complete:**
-- OpenClaw running on Raspberry Pi (REDACTED_HOST)
+- OpenClaw running on Raspberry Pi (see local network config)
 - Telegram bot configured and live
-  - Bot token: `REDACTED_TELEGRAM_BOT_TOKEN`
-  - User ID: `REDACTED_TELEGRAM_USER_ID`
+  - Bot token: stored in environment (`TELEGRAM_BOT_TOKEN`) — never commit tokens
+  - User ID: stored in environment (`TELEGRAM_USER_ID`)
   - Chad can message the bot from his phone
 - Identity established: Cascade, practical AI assistant
 - User: Chad (America/Chicago timezone)

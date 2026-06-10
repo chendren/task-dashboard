@@ -6,3 +6,7 @@ reminders.log
 reminders.json
 .openclaw/
 .pi/
+.env
+.env.*
+!.env.example
+.DS_Store
